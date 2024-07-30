@@ -157,3 +157,82 @@ $event->removeListeners();
 $event->emit("message"); // No output since all listeners have been removed
 $event->emit("notification"); // No output since all listeners have been removed
 ```
+
+## Available since version v1.0.1 and above
+- **(v1.0.1 - Still under development, not release yet)**
+
+- Defer the event to emit later
+```php
+
+$event->on("message", function () {
+    echo "The first message.\n";
+});
+
+$event->on("message", function () {
+    echo "The second message.\n";
+});
+
+if ($shouldMessage) {
+    $event->defer("message");
+} else {
+    // Other processes
+}
+
+// Other processes
+
+// Dispatch all deferred events
+$event->dispatch4deferred(); // If condition meet,
+                             // "The first message."
+                             // "The second message."
+```
+
+- Add Subscriber to event
+```php
+
+// Subscriber class must implement to `\NAL\Event\EventSubscriber`
+
+class Conversation implements \NAL\Event\EventSubscriber {
+
+    /**
+    * @inheritDoc
+    */
+    public function getEvents(): array
+    {
+        return [
+            "morning"   => "greeting",
+            "afternoon" => "greeting",
+            "goodbye"   => ["goodbye", "end"]
+        ];
+    }
+
+    public function greeting($time, $name)
+    {
+        echo "Good $time, $name!\n";
+    }
+    
+    public function goodbye($name)
+    {
+        echo "Goodbye, $name!\n";
+    }
+    
+    public function end()
+    {
+        echo "Have a nice day!\n";
+    }
+}
+
+$event = new \NAL\Event\Event();
+
+$event->subscribe(new Conversation());
+
+$event->emit("morning", "Morning","David"); // "Good Morning, David!"
+
+$event->emit("afternoon", "Afternoon", "John"); // "Good Afternoon, John!"
+
+$event->emit("goodbye", "Alex"); // "Goodbye, Alex!"
+                                 // "Have a nice day!"
+
+// You can also unsubscribe the subscribed listener
+$event->unsubscribe(new Conversation());
+
+```
