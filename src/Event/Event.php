@@ -20,6 +20,13 @@ class Event
     private DependenciesResolver $resolver;
 
     /**
+     * Deferred events
+     *
+     * @var array
+     */
+    private array $deferredEvents = [];
+
+    /**
      * Event constructor
      */
     public function __construct()
@@ -33,11 +40,13 @@ class Event
      * @param string $event The name of the event to listen for
      * @param callable $listener The callback function to execute when the event is emitted
      * @param int $priority Priority to sort the listeners
-     * @return void
+     * @return Event
      */
-    public function on(string $event, callable $listener, int $priority = 0): void
+    public function on(string $event, callable $listener, int $priority = 0): Event
     {
         $this->addListener($event, $listener, $priority);
+
+        return $this;
     }
 
     /**
@@ -46,11 +55,13 @@ class Event
      * @param string $event The name of the event to listen for
      * @param callable $listener The callback function to execute when the event is emitted
      * @param int $priority Priority to sort the listeners
-     * @return void
+     * @return Event
      */
-    public function once(string $event, callable $listener, int $priority = 0): void
+    public function once(string $event, callable $listener, int $priority = 0): Event
     {
         $this->addListener($event, $listener, $priority, true);
+
+        return $this;
     }
 
     /**
@@ -159,6 +170,50 @@ class Event
     }
 
     /**
+     * Defer an event to be emitted later
+     *
+     * @param string $event The name of the event to defer
+     * @param mixed ...$args Parameters to pass to the event listeners
+     * @return Event
+     */
+    public function defer(string $event, mixed ...$args): Event
+    {
+        $this->eventCannotBeEmpty($event);
+
+        $this->deferredEvents[] = ["event" => $event, "args" => $args];
+
+        return $this;
+    }
+
+    /**
+     * Dispatch all deferred events
+     *
+     * @return void
+     */
+    public function dispatch4deferred(): void
+    {
+        if (!empty($this->deferredEvents)) {
+            foreach ($this->deferredEvents as $index => $event) {
+                $this->emit($event["event"], ...$event["args"]);
+            }
+        }
+    }
+
+    /**
+     * Create an empty array for a given event if it does not exist
+     *
+     * @param array &$holder The array holder
+     * @param string $event The event name
+     * @return void
+     */
+    private function createEmptyArrOnNull(array &$holder, string $event): void
+    {
+        if (!isset($holder[$event])) {
+            $holder[$event] = [];
+        }
+    }
+
+    /**
      * Resolve the event to emit
      *
      * @param $listener
@@ -187,9 +242,7 @@ class Event
     {
         $this->eventCannotBeEmpty($event);
 
-        if (!isset($this->listeners[$event])) {
-            $this->listeners[$event] = [];
-        }
+        $this->createEmptyArrOnNull($this->listeners, $event);
 
         if ($once) {
             $this->listeners[$event][$priority]['once'][] = $listener;
