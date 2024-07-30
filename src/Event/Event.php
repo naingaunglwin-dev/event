@@ -4,6 +4,8 @@ namespace NAL\Event;
 
 use InvalidArgumentException;
 use NAL\DependenciesResolver\DependenciesResolver;
+use NAL\Exception\ClassNotFound;
+use NAL\Exception\InvalidListenerType;
 
 class Event
 {
@@ -27,6 +29,13 @@ class Event
     private array $deferredEvents = [];
 
     /**
+     * Subscribed classes list
+     *
+     * @var array
+     */
+    private array $subscribed = [];
+
+    /**
      * Event constructor
      */
     public function __construct()
@@ -38,11 +47,11 @@ class Event
      * Register an event listener
      *
      * @param string $event The name of the event to listen for
-     * @param callable $listener The callback function to execute when the event is emitted
+     * @param callable|array $listener The callback function to execute when the event is emitted
      * @param int $priority Priority to sort the listeners
      * @return Event
      */
-    public function on(string $event, callable $listener, int $priority = 0): Event
+    public function on(string $event, callable|array $listener, int $priority = 0): Event
     {
         $this->addListener($event, $listener, $priority);
 
@@ -53,11 +62,11 @@ class Event
      * Register a one-time event listener
      *
      * @param string $event The name of the event to listen for
-     * @param callable $listener The callback function to execute when the event is emitted
+     * @param callable|array $listener The callback function to execute when the event is emitted
      * @param int $priority Priority to sort the listeners
      * @return Event
      */
-    public function once(string $event, callable $listener, int $priority = 0): Event
+    public function once(string $event, callable|array $listener, int $priority = 0): Event
     {
         $this->addListener($event, $listener, $priority, true);
 
@@ -200,6 +209,76 @@ class Event
     }
 
     /**
+     * Subscribe to events using an EventSubscriber
+     *
+     * @param EventSubscriber $subscriber The subscriber to register
+     * @return Event
+     * @throws InvalidListenerType If the subscriber event listeners are invalid
+     * @throws ClassNotFound If a specified subscriber class does not exist
+     */
+    public function subscribe(EventSubscriber $subscriber): Event
+    {
+        $this->subscribeAction("subscribe", $subscriber);
+
+        return $this;
+    }
+
+    /**
+     * Unsubscribe from events using an EventSubscriber
+     *
+     * @param EventSubscriber $subscriber The subscriber to unregister
+     * @return Event
+     */
+    public function unsubscribe(EventSubscriber $subscriber): Event
+    {
+        if (in_array($subscriber::class, $this->subscribed)) {
+            $this->subscribeAction("unsubscribe", $subscriber);
+        }
+
+        return $this;
+    }
+
+    /**
+     * Handle subscription or unsubscription actions for an EventSubscriber
+     *
+     * @param string $type The type of action ("subscribe" or "unsubscribe")
+     * @param EventSubscriber $subscriber The subscriber to register or unregister
+     * @return void
+     */
+    private function subscribeAction(string $type, EventSubscriber $subscriber): void
+    {
+        $class  = $subscriber::class;
+
+        if ($type === "subscribe") {
+            $this->subscribed[] = $class;
+        } else {
+            foreach ($this->subscribed as $index => $subscribed) {
+                if ($class === $subscribed) {
+                    unset($this->subscribed[$index]);
+                }
+            }
+        }
+
+        $events = $subscriber->getEvents();
+
+        if (!empty($events)) {
+            foreach ($events as $event => $listeners) {
+                if ($type === "subscribe") {
+                    if (is_array($listeners)) {
+                        foreach ($listeners as $listener) {
+                            $this->on($event, [$class, $listener]);
+                        }
+                    } else {
+                        $this->on($event, [$class, $listeners]);
+                    }
+                } else {
+                    $this->removeListeners($event);
+                }
+            }
+        }
+    }
+
+    /**
      * Create an empty array for a given event if it does not exist
      *
      * @param array &$holder The array holder
@@ -222,10 +301,55 @@ class Event
      */
     private function resolve($listener, ...$args): void
     {
-        if (empty($args)) {
-            $this->resolver->callback($listener);
-        } else {
-            call_user_func($listener, ...$args);
+        if (is_array($listener)) {
+
+            $this->check($listener);
+
+            if (empty($args)) {
+                $this->resolver->method($listener[1], $listener[0]);
+            } else {
+                $this->createClass($listener[0]);
+
+                call_user_func($listener, ...$args);
+            }
+        }  else {
+            if (empty($args)) {
+                $this->resolver->callback($listener);
+            } else {
+                call_user_func($listener, ...$args);
+            }
+        }
+    }
+
+    /**
+     * Instantiate a class and assign it to the provided variable
+     *
+     * @param mixed $class The class name to instantiate
+     * @return void
+     */
+    private function createClass(mixed &$class): void
+    {
+        if (is_string($class)) {
+            $class = new $class();
+        }
+    }
+
+    /**
+     * Validate the event listener
+     *
+     * @param array $listener The event listener to validate
+     * @return void
+     * @throws InvalidListenerType If the listener array is invalid
+     * @throws ClassNotFound() If the specified class does not exist
+     */
+    private function check(array $listener): void
+    {
+        if (empty($listener) || !isset($listener[0]) || !isset($listener[1])) {
+            throw new InvalidListenerType();
+        }
+
+        if (!class_exists($listener[0])) {
+            throw new ClassNotFound($listener[0]);
         }
     }
 
@@ -233,12 +357,12 @@ class Event
      * Add the listeners
      *
      * @param string $event The name of the event to listen for
-     * @param callable $listener The callback function to execute when the event is emitted
+     * @param callable|array $listener The callback function to execute when the event is emitted
      * @param int $priority Priority to sort the listeners
      * @param bool $once Is listener just for once
      * @return void
      */
-    private function addListener(string $event, callable $listener, int $priority = 0, bool $once = false): void
+    private function addListener(string $event, callable|array $listener, int $priority = 0, bool $once = false): void
     {
         $this->eventCannotBeEmpty($event);
 
