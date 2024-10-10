@@ -205,4 +205,75 @@ class EventTest extends TestCase
             echo "Hello World";
         });
     }
+
+    public function testSubscribeMethod()
+    {
+        $event = new Event();
+
+        // Use a concrete class as the subscriber
+        $subscriber = new TestSubscriber();
+
+        // Subscribe the test subscriber
+        $event->subscribe($subscriber);
+
+        // Capture the output when the event is emitted
+        ob_start();
+        $event->emit('testEvent');
+        $output = ob_get_clean();
+
+        // Assert that the correct output was produced
+        $this->assertSame("Event handled", $output);
+    }
+
+    public function testDispatch4DeferredMethod()
+    {
+        $event = new Event();
+
+        // Output string to capture the results of deferred events
+        $output = "";
+
+        $event->on('testEvent', function ($arg) use (&$output) {
+            $output .= $arg;
+        });
+
+        // Defer two events with their corresponding callbacks
+        $event->defer('testEvent', "First deferred ");
+
+        $event->defer('testEvent', "Second deferred ");
+
+        // Assert that deferred events have not executed yet
+        $this->assertSame("", $output);
+
+        // Now dispatch the deferred events
+        $event->dispatch4deferred();
+
+        // Check that both deferred events executed in order
+        $this->assertSame("First deferred Second deferred ", $output);
+    }
+
+    public function testUnsubscribeMethod()
+    {
+        $event = new Event();
+        $subscriber = new TestSubscriber();
+
+        // Subscribe the test subscriber
+        $event->subscribe($subscriber);
+
+        // Emit and check output to confirm the subscriber was called
+        ob_start();
+        $event->emit('testEvent');
+        $output = ob_get_clean();
+        $this->assertSame("Event handled", $output);
+
+        // Now, unsubscribe the subscriber
+        $event->unsubscribe($subscriber);
+
+        // Emit the event again, but this time, since we unsubscribed, no output should occur
+        ob_start();
+        $event->emit('testEvent');
+        $outputAfterUnsubscribe = ob_get_clean();
+
+        // Assert that no output was produced after unsubscribing
+        $this->assertSame("", $outputAfterUnsubscribe);
+    }
 }
