@@ -159,7 +159,6 @@ $event->emit("notification"); // No output since all listeners have been removed
 ```
 
 ## Available since version v1.0.1 and above
-- **(v1.0.1 - Still under development, not release yet)**
 
 - Defer the event to emit later
 ```php
